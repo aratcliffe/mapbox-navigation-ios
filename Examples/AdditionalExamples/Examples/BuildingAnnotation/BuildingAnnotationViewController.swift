@@ -130,33 +130,31 @@ final class BuildingAnnotationViewController: UIViewController {
 }
 
 extension BuildingAnnotationViewController: NavigationViewControllerDelegate {
-    func navigationViewController(_ navigationViewController: NavigationViewController, didArriveAt waypoint: Waypoint) {
-        // Check if this is the final destination
-        guard let routeProgress = navigationViewController.mapboxNavigation.navigation().currentRouteProgress?.routeProgress,
-              routeProgress.isFinalLeg else {
+    func navigationViewController(_ navigationViewController: NavigationViewController, didUpdate progress: RouteProgress, with location: CLLocation, rawLocation: CLLocation) {
+        let arrivalThreshold = 100.0 // meters
+        guard progress.isFinalLeg,
+              progress.distanceRemaining > 0,
+              progress.distanceRemaining <= arrivalThreshold,
+              buildingAnnotationManager == nil,
+              let waypoint = progress.remainingWaypoints.last,
+              let navMapView = navigationViewController.navigationMapView else {
             return
         }
 
         Task {
             do {
-                if let navMapView = navigationViewController.navigationMapView {
-                    let buildings = try await navMapView.queryBuildings(at: waypoint.coordinate)
+                let buildings = try await navMapView.queryBuildings(at: waypoint.coordinate)
 
-                    if let building = buildings.first,
-                       let points = extractPoints(from: building.geometry) {
-                        if buildingAnnotationManager == nil {
-                            buildingAnnotationManager = BuildingAnnotationManager(mapView: navMapView.mapView)
-                        }
+                if let building = buildings.first,
+                   let points = extractPoints(from: building.geometry) {
+                    buildingAnnotationManager = BuildingAnnotationManager(mapView: navMapView.mapView)
 
-                        // Create and add building annotation with extracted height
-                        // Color and opacity will use manager defaults
-                        let annotation = BuildingAnnotation(
-                            coordinates: points,
-                            fillExtrusionHeight: extractHeight(from: building)
-                        )
+                    let annotation = BuildingAnnotation(
+                        coordinates: points,
+                        fillExtrusionHeight: extractHeight(from: building)
+                    )
 
-                        buildingAnnotationManager?.annotations = [annotation]
-                    }
+                    buildingAnnotationManager?.annotations = [annotation]
                 }
             } catch {
                 // Silently handle errors
