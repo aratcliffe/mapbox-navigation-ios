@@ -28,9 +28,11 @@ import Turf
 ///     BuildingAnnotationGroup(buildings, id: \.id) { building in
 ///         BuildingAnnotation(coordinates: building.coordinates)
 ///             .fillExtrusionHeight(building.height)
+///             .labelText(building.name)
 ///     }
 ///     .fillExtrusionColor(.green)  // Default color for all
 ///     .fillExtrusionOpacity(0.9)   // Group-level opacity
+///     .slot(.middle)
 /// }
 /// ```
 @available(iOS 14.0, *)
@@ -42,14 +44,14 @@ public struct BuildingAnnotationGroup<Data: RandomAccessCollection, ID: Hashable
     private var fillExtrusionOpacity: Double?
     private var fillExtrusionHeight: Double?
     private var fillExtrusionBase: Double?
+    private var textColor: UIColor?
+    private var textColorNight: UIColor?
+    private var textSize: Double?
+    private var textFont: [String]?
+    private var slot: Slot?
     private var layerId: String?
 
     /// Creates a group of building annotations from a data collection.
-    ///
-    /// - Parameters:
-    ///   - data: Collection of data to create annotations from
-    ///   - id: Key path to the identifier for each element
-    ///   - content: Closure that creates a `BuildingAnnotation` from each element
     public init(
         _ data: Data,
         id: KeyPath<Data.Element, ID>,
@@ -61,10 +63,6 @@ public struct BuildingAnnotationGroup<Data: RandomAccessCollection, ID: Hashable
     }
 
     /// Creates a group of building annotations from identifiable data.
-    ///
-    /// - Parameters:
-    ///   - data: Collection of identifiable data
-    ///   - content: Closure that creates a `BuildingAnnotation` from each element
     public init(
         _ data: Data,
         content: @escaping (Data.Element) -> BuildingAnnotation
@@ -73,64 +71,76 @@ public struct BuildingAnnotationGroup<Data: RandomAccessCollection, ID: Hashable
     }
 
     /// Creates a group with a static list of building annotations.
-    ///
-    /// - Parameter content: Array builder providing the annotations
     public init(
         @ArrayBuilder<BuildingAnnotation> content: () -> [BuildingAnnotation]
     ) where ID == Int {
         self.annotations = Array(content().enumerated())
     }
 
+    // MARK: - Builder methods
+
     /// Sets the fill extrusion color for all annotations in the group.
     public func fillExtrusionColor(_ color: UIColor) -> Self {
-        var copy = self
-        copy.fillExtrusionColor = color
-        return copy
+        var copy = self; copy.fillExtrusionColor = color; return copy
     }
 
     /// Sets the fill extrusion opacity for all annotations in the group.
     ///
     /// This is a layer-level property due to FillExtrusionLayer limitations.
     public func fillExtrusionOpacity(_ opacity: Double) -> Self {
-        var copy = self
-        copy.fillExtrusionOpacity = opacity
-        return copy
+        var copy = self; copy.fillExtrusionOpacity = opacity; return copy
     }
 
     /// Sets the fill extrusion height for all annotations in the group.
     public func fillExtrusionHeight(_ height: Double) -> Self {
-        var copy = self
-        copy.fillExtrusionHeight = height
-        return copy
+        var copy = self; copy.fillExtrusionHeight = height; return copy
     }
 
     /// Sets the fill extrusion base for all annotations in the group.
     public func fillExtrusionBase(_ base: Double) -> Self {
-        var copy = self
-        copy.fillExtrusionBase = base
-        return copy
+        var copy = self; copy.fillExtrusionBase = base; return copy
+    }
+
+    /// Sets the default label text color for the day light preset.
+    public func textColor(_ color: UIColor) -> Self {
+        var copy = self; copy.textColor = color; return copy
+    }
+
+    /// Sets the default label text color for the night light preset.
+    public func textColorNight(_ color: UIColor) -> Self {
+        var copy = self; copy.textColorNight = color; return copy
+    }
+
+    /// Sets the default label text size.
+    public func textSize(_ size: Double) -> Self {
+        var copy = self; copy.textSize = size; return copy
+    }
+
+    /// Sets the font stack for labels.
+    public func textFont(_ font: [String]) -> Self {
+        var copy = self; copy.textFont = font; return copy
+    }
+
+    /// Sets the style slot for the annotation layers.
+    public func slot(_ slot: Slot) -> Self {
+        var copy = self; copy.slot = slot; return copy
     }
 
     /// Sets the layer ID for the annotation group.
     public func layerId(_ id: String) -> Self {
-        var copy = self
-        copy.layerId = id
-        return copy
+        var copy = self; copy.layerId = id; return copy
     }
 
+    // MARK: - Feature collection builders
+
     private func buildFeatureCollection() -> FeatureCollection {
-        // Default values matching BuildingAnnotationManager
         let defaultColor = UIColor(red: 0.204, green: 0.537, blue: 0.976, alpha: 1.0)
-        let defaultHeight = 50.0
-        let defaultBase = 0.0
 
         let features: [Feature] = annotations.map { (_, annotation) in
-            // Use annotation values, fallback to group-level overrides, then to defaults
             let color = annotation.fillExtrusionColor ?? fillExtrusionColor ?? defaultColor
-            let height = annotation.fillExtrusionHeight ?? fillExtrusionHeight ?? defaultHeight
-            let base = annotation.fillExtrusionBase ?? fillExtrusionBase ?? defaultBase
+            let height = annotation.fillExtrusionHeight ?? fillExtrusionHeight ?? 50.0
+            let base = annotation.fillExtrusionBase ?? fillExtrusionBase ?? 0.0
 
-            // Create feature with polygon geometry
             var feature = Feature(geometry: .polygon(Polygon([annotation.coordinates])))
             feature.properties = [
                 "color": .string(StyleColor(color).rawValue),
@@ -142,25 +152,56 @@ public struct BuildingAnnotationGroup<Data: RandomAccessCollection, ID: Hashable
 
         return FeatureCollection(features: features)
     }
+
+    private func buildSymbolFeatureCollection() -> FeatureCollection {
+        let defaultTextColor = UIColor(red: 0.251, green: 0.251, blue: 0.251, alpha: 1.0)
+
+        let features: [Feature] = annotations.compactMap { (_, annotation) in
+            annotation.computeLabelFeature(
+                fallbackTextColor: textColor ?? defaultTextColor,
+                fallbackTextColorNight: textColorNight ?? .white,
+                fallbackTextSize: textSize ?? 16.0,
+                fallbackTextFont: textFont ?? ["DIN Pro Medium", "Arial Unicode MS Regular"]
+            )
+        }
+
+        return FeatureCollection(features: features)
+    }
 }
 
 @available(iOS 14.0, *)
 extension BuildingAnnotationGroup: MapStyleContent {
     public var body: some MapStyleContent {
         let sourceId = layerId ?? "building-annotation-group-source"
-        let layerId = self.layerId ?? "building-annotation-group-layer"
-        let featureCollection = buildFeatureCollection()
+        let extrusionLayerId = layerId ?? "building-annotation-group-layer"
+        let symbolSourceId = (layerId ?? "building-annotation-group") + "-symbol-source"
+        let symbolLayerId = (layerId ?? "building-annotation-group") + "-symbol-layer"
+        let effectiveTextFont = textFont ?? ["DIN Pro Medium", "Arial Unicode MS Regular"]
 
-        // Create source with feature collection
+        let featureCollection = buildFeatureCollection()
+        let symbolFeatureCollection = buildSymbolFeatureCollection()
+
         GeoJSONSource(id: sourceId)
             .data(.featureCollection(featureCollection))
 
-        // Create fill extrusion layer with data-driven styling
-        FillExtrusionLayer(id: layerId, source: sourceId)
-            .fillExtrusionColor(Exp(.get) { "color" })
-            .fillExtrusionHeight(Exp(.get) { "height" })
-            .fillExtrusionBase(Exp(.get) { "base" })
-            .fillExtrusionOpacity(fillExtrusionOpacity ?? 0.8)
+        makeExtrusionLayer(id: extrusionLayerId, source: sourceId)
+
+        if !symbolFeatureCollection.features.isEmpty {
+            GeoJSONSource(id: symbolSourceId)
+                .data(.featureCollection(symbolFeatureCollection))
+
+            makeBuildingSymbolLayer(id: symbolLayerId, source: symbolSourceId, textFont: effectiveTextFont, slot: slot)
+        }
+    }
+
+    private func makeExtrusionLayer(id: String, source: String) -> FillExtrusionLayer {
+        var layer = FillExtrusionLayer(id: id, source: source)
+        layer.fillExtrusionColor = .expression(Exp(.get) { "color" })
+        layer.fillExtrusionHeight = .expression(Exp(.get) { "height" })
+        layer.fillExtrusionBase = .expression(Exp(.get) { "base" })
+        layer.fillExtrusionOpacity = .constant(fillExtrusionOpacity ?? 0.8)
+        layer.slot = slot
+        return layer
     }
 }
 

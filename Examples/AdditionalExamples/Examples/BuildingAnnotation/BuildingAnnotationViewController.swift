@@ -149,9 +149,14 @@ extension BuildingAnnotationViewController: NavigationViewControllerDelegate {
                    let points = extractPoints(from: building.geometry) {
                     buildingAnnotationManager = BuildingAnnotationManager(mapView: navMapView.mapView)
 
+                    let labelPosition = LineString(points)
+                        .closestCoordinate(to: waypoint.coordinate)?.coordinate
+
                     let annotation = BuildingAnnotation(
                         coordinates: points,
-                        fillExtrusionHeight: extractHeight(from: building)
+                        fillExtrusionHeight: extractHeight(from: building),
+                        labelText: "2740",
+                        labelPosition: labelPosition
                     )
 
                     buildingAnnotationManager?.annotations = [annotation]
