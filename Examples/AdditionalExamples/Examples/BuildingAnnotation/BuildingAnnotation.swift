@@ -191,15 +191,6 @@ public struct BuildingAnnotation {
         let centroid = buildingCentroid(of: coordinates)
         let nearest = labelPosition ?? centroid
 
-        let dx = nearest.longitude - centroid.longitude
-        let dy = nearest.latitude - centroid.latitude
-        let anchor: String
-        if abs(dx) >= abs(dy) {
-            anchor = dx > 0 ? "right" : "left"
-        } else {
-            anchor = dy > 0 ? "top" : "bottom"
-        }
-
         let bearing = nearest.direction(to: centroid)
         let distanceMeters = nearest.distance(to: centroid)
         let insetMeters = distanceMeters * 0.25
@@ -208,7 +199,6 @@ public struct BuildingAnnotation {
         var feature = Feature(geometry: .point(Point(labelCoordinate)))
         feature.properties = [
             "label": .string(labelText),
-            "textAnchor": .string(anchor),
             "textColorDay": .string(StyleColor(textColor ?? fallbackTextColor).rawValue),
             "textColorNight": .string(StyleColor(textColorNight ?? fallbackTextColorNight).rawValue),
             "textSize": .number(textSize ?? fallbackTextSize)
@@ -249,9 +239,8 @@ internal func makeBuildingSymbolLayer(id: String, source: String, textFont: [Str
     layer.symbolZElevate = .constant(true)
     layer.symbolZOrder = .constant(.auto)
     layer.textField = .expression(Exp(.get) { "label" })
-    layer.textVariableAnchor = .constant([.top, .bottom, .left, .right])
-    layer.textRadialOffset = .constant(0.25)
-    layer.textAnchor = .expression(Exp(.get) { "textAnchor" })
+    layer.textVariableAnchor = .constant([.center, .top, .bottom, .left, .right])
+    layer.textJustify = .constant(.auto)
     layer.textEmissiveStrength = .constant(1.0)
     layer.textColor = .expression(textColorExpression)
     layer.textHaloColor = .expression(textHaloColorExpression)
