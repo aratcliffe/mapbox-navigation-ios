@@ -40,6 +40,7 @@ public final class BuildingAnnotationManager {
     private let symbolSourceId: String
     private let symbolLayerId: String
     private var isInitialized = false
+    private var styleLoadedToken: Any?
 
     /// Setting this property updates the map with the new annotations.
     /// Uses a single source and layer with data-driven styling for efficient batch updates.
@@ -99,14 +100,17 @@ public final class BuildingAnnotationManager {
     }
 
     /// The style slot to place the annotation layers into.
-    /// Must be set before the first `annotations` assignment.
+    /// Set this before assigning `annotations` for the slot to take effect.
     public var slot: Slot?
 
     /// Creates a new building annotation manager.
     ///
-    /// - Parameter mapView: The map view to add annotations to
-    public init(mapView: MapView) {
+    /// - Parameters:
+    ///   - mapView: The map view to add annotations to
+    ///   - slot: The style slot to place the annotation layers into. Can also be set via the `slot` property before the first `annotations` assignment.
+    public init(mapView: MapView, slot: Slot? = nil) {
         self.mapView = mapView
+        self.slot = slot
 
         Self.idGenerator += 1
         let id = Self.idGenerator
@@ -114,12 +118,18 @@ public final class BuildingAnnotationManager {
         self.layerId = "building-annotation-layer-\(id)"
         self.symbolSourceId = "building-annotation-symbol-source-\(id)"
         self.symbolLayerId = "building-annotation-symbol-layer-\(id)"
-
-        setupLayer()
     }
 
     private func setupLayer() {
         guard !isInitialized else { return }
+
+        guard mapView.mapboxMap.isStyleLoaded else {
+            styleLoadedToken = mapView.mapboxMap.onStyleLoaded.observe { [weak self] _ in
+                self?.styleLoadedToken = nil
+                self?.setupLayer()
+            }
+            return
+        }
 
         var source = GeoJSONSource(id: sourceId)
         source.data = .featureCollection(FeatureCollection(features: []))
@@ -148,9 +158,11 @@ public final class BuildingAnnotationManager {
         try? mapView.mapboxMap.addLayer(symbolLayer)
 
         isInitialized = true
+        updateAnnotations()
     }
 
     private func updateAnnotations() {
+        setupLayer()
         guard isInitialized else { return }
 
         let features = annotations.map { createFeature(from: $0) }

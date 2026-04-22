@@ -147,7 +147,8 @@ extension BuildingAnnotationViewController: NavigationViewControllerDelegate {
 
                 if let building = buildings.first,
                    let points = extractPoints(from: building.geometry) {
-                    buildingAnnotationManager = BuildingAnnotationManager(mapView: navMapView.mapView)
+                    let manager = BuildingAnnotationManager(mapView: navMapView.mapView, slot: .top)
+                    buildingAnnotationManager = manager
 
                     let labelPosition = LineString(points)
                         .closestCoordinate(to: waypoint.coordinate)?.coordinate
@@ -159,7 +160,7 @@ extension BuildingAnnotationViewController: NavigationViewControllerDelegate {
                         labelPosition: labelPosition
                     )
 
-                    buildingAnnotationManager?.annotations = [annotation]
+                    manager.annotations = [annotation]
                 }
             } catch {
                 // Silently handle errors
